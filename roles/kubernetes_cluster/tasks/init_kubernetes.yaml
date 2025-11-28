@@ -1,0 +1,70 @@
+---
+- name: create an empty file for Kubeadm configuring
+  copy:
+    content: ""
+    dest: /etc/kubernetes/kubeadm-config.yaml
+    force: n
+  tags: master1
+
+- name: configuring the container runtime including its cgroup driver
+  blockinfile:
+    path: /etc/kubernetes/kubeadm-config.yaml
+    block: |
+         kind: ClusterConfiguration
+         apiVersion: kubeadm.k8s.io/v1beta3
+         controlPlaneEndpoint: {{ keepalive_ip }}:6443
+         networking:
+           podSubnet: "{{ pod_network_cidr }}"
+         ---
+         kind: KubeletConfiguration
+         apiVersion: kubelet.config.k8s.io/v1beta1
+         runtimeRequestTimeout: "15m"
+         cgroupDriver: "systemd"
+         systemReserved:
+           cpu: 100m
+           memory: 350M
+         kubeReserved:
+           cpu: 100m
+           memory: 50M
+         enforceNodeAllocatable:
+         - pods
+  tags: master1
+
+- name: Run kubeadm init
+  command: kubeadm init --config /etc/kubernetes/kubeadm-config.yaml
+  register: init_output
+  tags: master1
+  
+- name: Print client output
+  debug:
+    var: init_output
+  tags: master1
+
+- name: Extract join command and token
+  set_fact:
+    join_command: "{{ init_output.stdout_lines | select('match', '^kubeadm join') | first }}"
+    join_token: "{{ init_output.stdout_lines | select('match', '^kubeadm join') | first | regex_replace('.*--token ([^ ]*).*', '\\1') }}"
+  tags: master1
+
+- name: Create .kube directory
+  file:
+    path: "{{ ansible_env.HOME }}/.kube"
+    state: directory
+    mode: '0755'
+  tags: master1
+
+- name: Copy admin.conf to .kube/config
+  copy:
+    src: /etc/kubernetes/admin.conf
+    dest: "{{ ansible_env.HOME }}/.kube/config"
+    remote_src: true
+    mode: '0644'
+  tags: master1
+
+- name: Set ownership for .kube/config
+  file:
+    path: "{{ ansible_env.HOME }}/.kube/config"
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_id }}"
+    mode: '0600'
+  tags: master1

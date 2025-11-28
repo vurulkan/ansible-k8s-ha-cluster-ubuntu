@@ -1,0 +1,45 @@
+[preinstall]
+10.42.0.10 ansible_host=K8S-MASTER1
+10.42.0.11 ansible_host=K8S-MASTER2
+10.42.0.12 ansible_host=K8S-MASTER3
+10.42.0.13 ansible_host=K8S-WORKER-1
+10.42.0.14 ansible_host=K8S-WORKER-2
+10.42.0.15 ansible_host=K8S-WORKER-3
+10.42.0.16 ansible_host=K8S-WORKER-4
+10.42.0.17 ansible_host=K8S-WORKER-5
+10.42.0.18 ansible_host=K8S-WORKER-6
+10.42.0.19 ansible_host=K8S-WORKER-7
+
+[master]
+10.42.0.10 ansible_host=K8S-MASTER1
+10.42.0.11 ansible_host=K8S-MASTER2
+10.42.0.12 ansible_host=K8S-MASTER3
+
+[loadbalancer]
+10.42.0.20 ansible_host=K8S-LB1
+10.42.0.21 ansible_host=K8S-LB2
+
+[worker]
+10.42.0.13 ansible_host=K8S-WORKER-1
+10.42.0.14 ansible_host=K8S-WORKER-2
+10.42.0.15 ansible_host=K8S-WORKER-3
+10.42.0.16 ansible_host=K8S-WORKER-4
+10.42.0.17 ansible_host=K8S-WORKER-5
+10.42.0.18 ansible_host=K8S-WORKER-6
+10.42.0.19 ansible_host=K8S-WORKER-7
+
+[cluster_init]
+10.42.0.10 ansible_host=K8S-MASTER1
+
+[worker_init]
+10.42.0.13 ansible_host=K8S-WORKER-1
+10.42.0.14 ansible_host=K8S-WORKER-2
+10.42.0.15 ansible_host=K8S-WORKER-3
+10.42.0.16 ansible_host=K8S-WORKER-4
+10.42.0.17 ansible_host=K8S-WORKER-5
+10.42.0.18 ansible_host=K8S-WORKER-6
+10.42.0.19 ansible_host=K8S-WORKER-7
+
+[master_init]
+10.42.0.10 ansible_host=K8S-MASTER1
+#10.42.0.11 ansible_host=K8S-MASTER2

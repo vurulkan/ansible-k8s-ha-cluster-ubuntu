@@ -1,0 +1,88 @@
+---
+
+- name: Update & Upgrade APT Packages
+  apt:
+    update_cache: yes
+    upgrade: yes
+    cache_valid_time: 86400 #One day
+  tags: loadbalancer
+
+- name: Add HAProxy repository
+  shell: add-apt-repository ppa:vbernat/haproxy-2.8 -y
+  tags: loadbalancer
+
+- name: Update & Upgrade APT Packages
+  apt:
+    update_cache: yes
+    cache_valid_time: 86400 #One day
+  tags: loadbalancer
+
+- name: Add sysctl settings to sysctl.conf
+  lineinfile:
+    path: /etc/sysctl.conf
+    line: "{{ item }}"
+  loop:
+    - "net.ipv4.ip_nonlocal_bind=1"
+    - "net.ipv4.ip_forward=1"
+  tags: loadbalancer
+
+- name: Apply sysctl settings
+  command: sysctl -p
+  tags: loadbalancer
+
+- name: Install keepalived and haproxy
+  apt:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - keepalived
+    - haproxy
+  tags: loadbalancer
+
+- name: Create check_apiserver.sh script
+  template:
+    src:  check_apiserver.sh.j2
+    dest: /etc/keepalived/check_apiserver.sh
+    mode: '0755'
+  tags: loadbalancer
+
+- name: Create keepalived.conf file
+  template:
+    src:  keepalived.conf.j2
+    dest: /etc/keepalived/keepalived.conf
+    mode: '644'
+  tags: loadbalancer
+
+- name: Enable and start keepalived service
+  service:
+    name: keepalived
+    state: started
+    enabled: yes
+  tags: loadbalancer
+
+- name: Configure haproxy
+  template:
+    src:  haproxy.cfg.j2
+    dest: /etc/haproxy/haproxy.cfg
+    mode: '644'
+  tags: loadbalancer
+
+- name: Enable and restart haproxy service
+  service:
+    name: haproxy
+    state: restarted
+    enabled: yes
+  tags: loadbalancer
+
+- name: Disable swap
+  command: "{{ item }}"
+  loop:
+    - swapoff -a
+  tags: loadbalancer
+
+- name: disable SWAP in fstab
+  replace:
+    path: /etc/fstab
+    regexp: '^([^#].*?\sswap\s+sw\s+.*)$'
+    replace: '# \1'
+  tags: loadbalancer

@@ -1,0 +1,257 @@
+---
+# tasks file for kubernetes_cluster
+  
+  - name: Update & Upgrade APT Packages
+    apt:
+      update_cache: yes
+      upgrade: yes
+      cache_valid_time: 86400 #One day
+    tags: preinstall
+
+  - name: Stop & Disable UFW
+    shell: systemctl stop ufw && systemctl disable ufw
+    tags: preinstall
+
+  - name: Stop & Disable AppArmor
+    shell: systemctl stop apparmor && systemctl disable apparmor
+    tags: preinstall
+
+  - name: Install some useful packages
+    apt:
+      name:
+        - whois 
+        - curl
+        - zip
+        - unzip
+        - rar
+        - wget
+        - htop 
+        - net-tools
+        - vim
+        - nano
+        - telnet
+        - bash-completion
+        - bash-completion*
+        - hwinfo
+        - git
+        - dnsutils
+        - smem
+        - gcc
+        - finger
+        - nethogs
+        - make
+        - perl 
+        - sysstat
+        - bzip2
+        - sosreport
+        - swaks
+        - iputils-ping
+        - traceroute
+        - gnupg2
+        - software-properties-common
+        - ca-certificates
+      state: present
+    tags: preinstall
+
+  - name: Add k8s hosts to /etc/hosts
+    lineinfile:
+      path: /etc/hosts
+      line: "{{ item }} {{ hostvars[item]['ansible_host'] }}"
+      state: present
+      create: yes
+    loop: "{{ groups['preinstall'] }}"
+    tags: preinstall
+
+  - name: disable SWAP (Kubeadm requirement)
+    shell: |
+      swapoff -a
+    tags: preinstall
+
+  - name: disable SWAP in fstab (Kubeadm requirement)
+    replace:
+      path: /etc/fstab
+      regexp: '^([^#].*?\sswap\s+sw\s+.*)$'
+      replace: '# \1'
+    tags: preinstall
+
+  - name: create an empty file for the Containerd module
+    copy:
+      content: ""
+      dest: /etc/modules-load.d/containerd.conf
+      force: no
+    tags: preinstall
+
+  - name: configure modules for Containerd
+    blockinfile:
+      path: /etc/modules-load.d/containerd.conf
+      block: |
+           overlay
+           br_netfilter
+    tags: preinstall
+
+  - name: create an empty file for Kubernetes sysctl params
+    copy:
+      content: ""
+      dest: /etc/sysctl.d/99-kubernetes-cri.conf
+      force: no
+    tags: preinstall
+
+  - name: configure sysctl params for Kubernetes
+    lineinfile:
+      path: /etc/sysctl.d/99-kubernetes-cri.conf
+      line: "{{ item }}"
+    with_items:
+      - 'net.bridge.bridge-nf-call-iptables  = 1'
+      - 'net.ipv4.ip_forward                 = 1'
+      - 'net.bridge.bridge-nf-call-ip6tables = 1'
+    tags: preinstall
+
+  - name: apply sysctl params without reboot
+    command: sysctl --system
+    tags: preinstall
+
+  - name: install APT Transport HTTPS
+    apt:
+      name: apt-transport-https
+      state: present
+    tags: preinstall
+
+  - name: Check if /etc/apt/keyrings directory exists
+    stat:
+      path: /etc/apt/keyrings
+    register: keyrings_dir
+    tags: preinstall
+  
+  - name: Create /etc/apt/keyrings directory
+    file:
+      path: /etc/apt/keyrings
+      state: directory
+    when: not keyrings_dir.stat.exists
+    tags: preinstall
+
+  - name: Remove old Docker & Kubernetes apt keys
+    shell: "rm -f /etc/apt/keyrings/docker.gpg && rm -f /etc/apt/keyrings/kubernetes-apt-keyring.gpg"
+    tags: preinstall
+
+  - name: Add Docker repository to sources list
+    lineinfile:
+      path: /etc/apt/sources.list.d/kubernetes.list
+      line: "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+      create: yes
+      tags: preinstall
+
+  - name: Download and install Docker apt key
+    shell: "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg"
+    tags: preinstall
+
+  - name: Add Kubernetes repository to sources list
+    lineinfile:
+      path: /etc/apt/sources.list.d/kubernetes.list
+      line: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.32/deb/ /"
+      create: yes
+    tags: preinstall
+
+  - name: Download and install Kubernetes apt key
+    shell: "curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.32/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg"
+    tags: preinstall
+
+  - name: Update APT Packages
+    shell: apt update
+    tags: preinstall
+
+  - name: install Containerd
+    apt:
+      name: containerd
+      state: present
+    tags: preinstall
+
+  - name: create Containerd directory
+    file:
+      path: /etc/containerd
+      state: directory
+    tags: preinstall
+
+  - name: add Containerd configuration
+    shell: /usr/bin/containerd config default > /etc/containerd/config.toml
+    tags: preinstall
+
+  - name: configuring the systemd cgroup driver for Containerd
+    lineinfile:
+      path: /etc/containerd/config.toml
+      regexp: '            SystemdCgroup = false'
+      line: '            SystemdCgroup = true'
+    tags: preinstall
+
+  - name: configuring the systemd cgroup driver for Containerd
+    lineinfile:
+      path: /etc/containerd/config.toml
+      regexp: '^(\s*\[plugins\."io\.containerd\.grpc\.v1\.cri"\])'
+      line: '    plugins.cri.systemd_cgroup = false'
+      backrefs: yes
+    tags: preinstall
+
+  - name: enable the Containerd service and start it
+    systemd:
+      name: containerd
+      state: restarted
+      enabled: yes
+      daemon-reload: yes
+    tags: preinstall
+
+  - name: Install Kubernetes packages
+    apt:
+      name: "{{ item }}"
+      state: present
+    loop:
+      - kubelet
+      - kubeadm
+      - kubectl
+    tags: preinstall
+
+  - name: enable the Kubelet service, and enable it persistently
+    service:
+      name: kubelet
+      enabled: yes
+    tags: preinstall
+
+  - name: load br_netfilter kernel module
+    modprobe:
+      name: br_netfilter
+      state: present
+    tags: preinstall
+
+  - name: set bridge-nf-call-iptables
+    sysctl:
+      name: net.bridge.bridge-nf-call-iptables
+      value: 1
+    tags: preinstall
+
+  - name: set ip_forward
+    sysctl:
+      name: net.ipv4.ip_forward
+      value: 1
+    tags: preinstall
+
+  - name: check Kubelet args in Kubelet config
+    shell: grep "^Environment=\"KUBELET_EXTRA_ARGS=" /usr/lib/systemd/system/kubelet.service.d/10-kubeadm.conf || true
+    register: check_args
+    tags: preinstall
+
+  - name: add runtime args in Kubelet config
+    lineinfile:
+      dest: "/usr/lib/systemd/system/kubelet.service.d/10-kubeadm.conf"
+      line: "Environment=\"KUBELET_EXTRA_ARGS= --runtime-cgroups=/system.slice/containerd.service --container-runtime-endpoint=unix:///run/containerd/containerd.sock\""
+      insertafter: '\[Service\]'
+    when: check_args.stdout == ""
+    tags: preinstall
+
+  - name: Hold packages
+    vars:
+      package_list:
+        - kubeadm
+        - containerd
+        - kubelet
+        - kubectl
+    command: apt-mark hold "{{ item }}"
+    loop: "{{ package_list }}"
+    tags: preinstall

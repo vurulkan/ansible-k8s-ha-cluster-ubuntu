@@ -1,0 +1,6 @@
+---
+- hosts: "{{ machine }}"
+  tasks:
+    - name: Deploy Kubernetes Cluster
+      import_role:
+        name: kubernetes_cluster

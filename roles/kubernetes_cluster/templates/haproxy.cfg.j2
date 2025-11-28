@@ -1,0 +1,15 @@
+frontend kubernetes-frontend
+  bind *:6443
+  mode tcp
+  option tcplog
+  default_backend kubernetes-backend
+
+backend kubernetes-backend
+  option httpchk GET /healthz
+  http-check expect status 200
+  mode tcp
+  option ssl-hello-chk
+  balance roundrobin
+    server master1 {{ master1 }}:6443 check fall 3 rise 2
+    server master2 {{ master2 }}:6443 check fall 3 rise 2
+    server master3 {{ master3 }}:6443 check fall 3 rise 2

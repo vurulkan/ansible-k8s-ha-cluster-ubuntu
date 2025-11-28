@@ -1,0 +1,27 @@
+---
+- name: Generate join command
+  delegate_to: master1
+  command: kubeadm token create --print-join-command
+  register: token
+  tags: worker_init
+
+- name: Display join command
+  debug:
+    var: token.stdout_lines[0]
+  tags: worker_init
+  
+- name: joinning new Worker to master
+  shell: "{{ token.stdout_lines[0] }}"
+  tags: worker_init
+  
+- name: Generate join command
+  delegate_to: master1
+  shell: kubectl get nodes
+  register: node_status
+  tags: worker_init
+  
+- name: showing Nodes
+  debug:
+    var: node_status.stdout_lines
+  tags: worker_init
+  

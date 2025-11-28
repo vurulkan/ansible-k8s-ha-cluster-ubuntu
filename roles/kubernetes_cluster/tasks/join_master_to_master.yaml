@@ -1,0 +1,26 @@
+---
+- name: Generate join command
+  delegate_to: master1
+  command: kubeadm init phase upload-certs --upload-certs
+  register: certs
+  tags: master_init
+
+- name: Display join command
+  debug:
+    var: certs.stdout_lines[2]
+  tags: master_init
+
+- name: getting token from master
+  delegate_to: master1
+  command: kubeadm token create --print-join-command
+  register: token
+  tags: master_init
+
+- name: Display join command
+  debug:
+    var: token.stdout_lines[0]
+  tags: master_init
+
+- name: joinning new master to master
+  shell: "{{ token.stdout_lines[0] }} --control-plane --certificate-key {{ certs.stdout_lines[2] }}"
+  tags: master_init
