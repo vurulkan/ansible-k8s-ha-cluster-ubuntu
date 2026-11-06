@@ -15,6 +15,7 @@ The Ansible playbooks in this repository perform the following high‑level step
 - Install the Calico CNI plugin for pod networking.
 - Join additional master nodes to the cluster (control‑plane HA).
 - Join worker nodes to the cluster.
+- Optionally install Longhorn distributed block storage with Helm.
 
 All automation is orchestrated from an Ansible control host.
 
@@ -24,7 +25,8 @@ All automation is orchestrated from an Ansible control host.
 Before running the playbooks, ensure the following:
 
 - **Operating System**
-  - Ubuntu 22.04 or 24.04 on all master, worker and load balancer nodes.
+  - Ubuntu 24.04 or 26.04 on all master, worker and load balancer nodes.
+  - Ubuntu 22.04 also works if `haproxy_branch` is set to `3.0` (see Section 2.1).
   - All OS updates applied on every node.
 
 - **User and Privileges**
@@ -43,9 +45,11 @@ Before running the playbooks, ensure the following:
 
 Before executing any playbooks, review and adjust the following configuration items:
 
-- `preinstall.yaml`
-  - In the **Install Kubernetes packages** task, ensure the Kubernetes components (`kubelet`, `kubeadm`, `kubectl`) match the version family you intend to use.
-  - If you want to use Kubernetes `v1.32`, verify that the **Add Kubernetes repository to sources list** task points to the corresponding `v1.32` repository URL. Update this URL if you require a different major version.
+- `roles/kubernetes_cluster/defaults/main.yml` – component versions
+  - `k8s_version` – Kubernetes minor version (e.g. `v1.37`). It is used in the Kubernetes APT repository URL; the latest patch release of that minor version is installed.
+  - `calico_version` – Calico release (e.g. `v3.33.0`).
+  - `haproxy_branch` – HAProxy branch installed from the `ppa:vbernat/haproxy-<branch>` PPA (default `3.2`, LTS). Make sure the PPA publishes packages for your Ubuntu release (`3.2`: 24.04 and 26.04; use `3.0` for 22.04).
+  - `longhorn_version` – Longhorn Helm chart version (e.g. `1.13.0`). Longhorn 1.13 requires Kubernetes v1.34 or later.
 
 - `roles/kubernetes_cluster/templates/keepalived.conf.j2`
   - Set `virtual_router_id` to a value that is **unique within the same subnet/L2 domain**. Having another VRRP instance with the same ID on the same subnet can lead to unstable or unexpected behavior.
@@ -62,6 +66,7 @@ Before executing any playbooks, review and adjust the following configuration it
     - `[worker]` and `[worker_init]` – worker nodes.
     - `[cluster_init]` – the initial master node (`master1`).
     - `[master_init]` – additional master nodes except `master1`. These nodes are joined one by one; keeping all of them active at the same time in this group can cause token‑related errors during the join‑master‑to‑master phase.
+    - `[longhorn]` – nodes that will store Longhorn volumes (only needed if you install Longhorn).
 
 ---
 ## 3. Ansible Control Host Setup
@@ -177,6 +182,7 @@ Important files and their purpose:
   - `interface_name` – network interface used by Keepalived/HAProxy
   - `pod_network_cidr` – pod network CIDR (e.g. `192.168.0.0/16`)
   - `master1`, `master2`, `master3` – IP addresses or host aliases for master nodes
+  - `k8s_version`, `calico_version`, `haproxy_branch`, `longhorn_version` – component versions (see Section 2.1)
 
 - `roles/kubernetes_cluster/tasks/*.yaml`  
   Task files that implement each phase of the deployment:
@@ -186,6 +192,7 @@ Important files and their purpose:
   - `network.yaml` – Calico CNI deployment.
   - `join_master_to_master.yaml` – Joining additional master nodes to the control plane.
   - `join_worker_to_master.yaml` – Joining worker nodes to the cluster.
+  - `longhorn.yaml` – Longhorn node prerequisites, Helm installation and the Longhorn Helm chart.
 
 ---
 ## 5. Inventory Groups
@@ -200,6 +207,7 @@ The `inventory` file uses the following host groups:
 - `[worker_init]` – Worker nodes to be joined to the cluster.
 - `[master_init]` – Additional master nodes (excluding `master1`).  
   These nodes are joined sequentially to the cluster.
+- `[longhorn]` – Nodes that will store Longhorn volumes. Leave it empty if you do not install Longhorn.
 
 Ensure the inventory groups accurately reflect your environment before running any playbooks.
 
@@ -212,8 +220,7 @@ Before executing any playbooks, ensure you have reviewed and updated:
 
 - Core role defaults (`roles/kubernetes_cluster/defaults/main.yml`)
 - Inventory groups and host assignments (`inventory`)
-- Kubernetes repository and package versions (`roles/kubernetes_cluster/tasks/preinstall.yaml`)
-- Calico CNI manifest version (`roles/kubernetes_cluster/tasks/network.yaml`)
+- Component versions (`k8s_version`, `calico_version`, `haproxy_branch`, `longhorn_version` in `roles/kubernetes_cluster/defaults/main.yml`)
 - Keepalived VRRP configuration (`roles/kubernetes_cluster/templates/keepalived.conf.j2`)
 
 No additional settings are required here beyond what is covered in Section 2.1.
@@ -243,7 +250,7 @@ This playbook:
 - Disables UFW and AppArmor (where applicable).
 - Installs prerequisite utilities.
 - Configures kernel modules and sysctl parameters required by Kubernetes.
-- Installs and configures `containerd` as the container runtime.
+- Installs `containerd.io` (containerd 2.x) from the Docker repository and configures it with the systemd cgroup driver.
 - Adds Docker and Kubernetes APT repositories and keys.
 - Installs `kubelet`, `kubeadm`, and `kubectl`.
 - Enables and configures `kubelet`.
@@ -258,7 +265,7 @@ ansible-playbook -i inventory --tag loadbalancer -e 'machine=loadbalancer' --bec
 
 This playbook:
 
-- Installs HAProxy and Keepalived.
+- Adds the `ppa:vbernat/haproxy-<haproxy_branch>` PPA and installs HAProxy from it, together with Keepalived.
 - Applies required `sysctl` settings.
 - Deploys the following configuration files:
   - `/etc/keepalived/check_apiserver.sh`
@@ -361,12 +368,57 @@ After completion, verify that all worker nodes appear as `Ready`:
 kubectl get nodes -o wide
 ```
 
+### 7.7 Install Longhorn (Optional)
+
+[Longhorn](https://longhorn.io) provides distributed block storage for the cluster. Install it after all nodes have joined and Calico is running.
+
+1. Add the nodes that will store Longhorn volumes to the `[longhorn]` group in `inventory`.
+
+2. Install the node prerequisites:
+
+   ```bash
+   ansible-playbook -i inventory --tag longhorn -e 'machine=longhorn' --become --ask-become-pass run.yaml
+   ```
+
+   This playbook, on every node in `[longhorn]`:
+
+   - Installs `open-iscsi`, `nfs-common`, `cryptsetup` and `dmsetup`.
+   - Loads the `iscsi_tcp` kernel module and adds it to `/etc/modules-load.d/` so it is loaded at boot.
+   - Enables and starts `iscsid`.
+
+3. Install Helm and Longhorn:
+
+   ```bash
+   ansible-playbook -i inventory --tag helm -e 'machine=master' --become --ask-become-pass run.yaml
+   ```
+
+   This playbook:
+
+   - Installs Helm on **all master nodes** from the official Helm APT repository.
+   - Installs the Longhorn chart (`longhorn_version`) into the `longhorn-system` namespace **from `master1` only**. It uses `helm upgrade --install`, so it can be re-run safely.
+
+4. Verify on `master1`:
+
+   ```bash
+   kubectl -n longhorn-system get pod
+   ```
+
+   All pods should reach `Running` state.
+
+Notes:
+
+- Volume data is stored under `/var/lib/longhorn` on each node by default.
+- The Longhorn UI needs a separate Ingress and has no authentication by default.
+- Longhorn's `longhornctl check preflight` tool can be used to validate the nodes before installation.
+
 ---
 ## 8. Notes and Recommendations
 
-- **Kubernetes Versioning**
-  - The Kubernetes major version is primarily controlled by the APT repository URL in `preinstall.yaml` (task **Add Kubernetes repository to sources list**).
-  - If you require a different major version, update the repository URL accordingly before running the preinstall phase.
+- **Versioning**
+  - All component versions are set in `roles/kubernetes_cluster/defaults/main.yml`; the task files contain no hard‑coded versions.
+  - A value can be overridden for a single run with `-e`, for example `-e k8s_version=v1.36`.
+  - Changing `k8s_version` does **not** upgrade an existing cluster. Kubernetes packages are locked with `apt-mark hold`, so the change only affects newly installed nodes. Use `kubeadm upgrade` to upgrade a cluster.
+  - Changing `longhorn_version` and re‑running the `helm` tag **upgrades** Longhorn (`helm upgrade --install`). Longhorn only supports upgrading from the previous minor version; read the release notes first.
 
 - **Idempotency**
   - The playbooks are designed to be idempotent where practical, but some steps (e.g. `kubeadm init`) are inherently single‑run operations. Re‑running those tasks on an already initialized control plane may fail and should be avoided unless performing a clean rebuild.
@@ -386,6 +438,7 @@ For ongoing operations:
   - Kubernetes control plane components.
   - HAProxy and Keepalived services on load balancers.
   - Cluster nodes (`kubectl get nodes`) and system pods (`kubectl get pod -A`).
-- Apply security updates to the underlying OS and review Kubernetes and Calico release notes before upgrading repositories or manifests.
+  - Longhorn components (`kubectl -n longhorn-system get pod`), if Longhorn is installed.
+- Apply security updates to the underlying OS and review Kubernetes, Calico and Longhorn release notes before upgrading repositories or manifests.
 
 This document should serve as a baseline guide for deploying and operating a highly available Kubernetes cluster using Ansible on Ubuntu. Adjust the configuration and procedures as needed to align with your organization’s standards and policies.

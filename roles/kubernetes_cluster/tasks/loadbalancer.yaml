@@ -8,13 +8,12 @@
   tags: loadbalancer
 
 - name: Add HAProxy repository
-  shell: add-apt-repository ppa:vbernat/haproxy-2.8 -y
+  shell: add-apt-repository ppa:vbernat/haproxy-{{ haproxy_branch }} -y
   tags: loadbalancer
 
-- name: Update & Upgrade APT Packages
+- name: Update APT cache
   apt:
     update_cache: yes
-    cache_valid_time: 86400 #One day
   tags: loadbalancer
 
 - name: Add sysctl settings to sysctl.conf
@@ -32,11 +31,10 @@
 
 - name: Install keepalived and haproxy
   apt:
-    name: "{{ item }}"
+    name:
+      - keepalived
+      - "haproxy={{ haproxy_branch }}.*"
     state: present
-  loop:
-    - keepalived
-    - haproxy
   tags: loadbalancer
 
 - name: Create check_apiserver.sh script

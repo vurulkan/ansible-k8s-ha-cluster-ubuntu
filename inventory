@@ -28,6 +28,8 @@
 10.42.0.18 ansible_host=K8S-WORKER-6
 10.42.0.19 ansible_host=K8S-WORKER-7
 
+[longhorn]
+
 [cluster_init]
 10.42.0.10 ansible_host=K8S-MASTER1
 

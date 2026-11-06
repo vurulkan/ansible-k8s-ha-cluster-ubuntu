@@ -11,7 +11,7 @@
     path: /etc/kubernetes/kubeadm-config.yaml
     block: |
          kind: ClusterConfiguration
-         apiVersion: kubeadm.k8s.io/v1beta3
+         apiVersion: kubeadm.k8s.io/v1beta4
          controlPlaneEndpoint: {{ keepalive_ip }}:6443
          networking:
            podSubnet: "{{ pod_network_cidr }}"

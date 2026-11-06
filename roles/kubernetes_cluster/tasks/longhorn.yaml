@@ -1,0 +1,70 @@
+---
+# Longhorn node prerequisites (V1 data engine) - run on [longhorn] group
+- name: Install Longhorn prerequisites
+  apt:
+    name:
+      - open-iscsi
+      - nfs-common
+      - cryptsetup
+      - dmsetup
+    state: present
+    update_cache: yes
+  tags: longhorn
+
+- name: Load iscsi_tcp module on boot
+  copy:
+    content: "iscsi_tcp\n"
+    dest: /etc/modules-load.d/iscsi_tcp.conf
+  tags: longhorn
+
+- name: Load iscsi_tcp module
+  modprobe:
+    name: iscsi_tcp
+    state: present
+  tags: longhorn
+
+- name: Enable and start iscsid
+  service:
+    name: iscsid
+    state: started
+    enabled: yes
+  tags: longhorn
+
+# Helm (official apt repo) - run on [master] group
+- name: Download Helm apt key
+  get_url:
+    url: https://packages.buildkite.com/helm-linux/helm-debian/gpgkey
+    dest: /etc/apt/keyrings/helm.asc
+    mode: '0644'
+  tags: helm
+
+- name: Add Helm repository
+  copy:
+    content: "deb [signed-by=/etc/apt/keyrings/helm.asc] https://packages.buildkite.com/helm-linux/helm-debian/any/ any main\n"
+    dest: /etc/apt/sources.list.d/helm-stable-debian.list
+  tags: helm
+
+- name: Install Helm
+  apt:
+    name: helm
+    state: present
+    update_cache: yes
+  tags: helm
+
+# Longhorn chart - only from master1
+- name: Install Longhorn with Helm
+  shell: |
+    helm repo add longhorn https://charts.longhorn.io --force-update
+    helm repo update
+    helm upgrade --install longhorn longhorn/longhorn --namespace longhorn-system --create-namespace --version {{ longhorn_version }}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: longhorn_output
+  when: inventory_hostname == master1
+  tags: helm
+
+- name: Print Longhorn install output
+  debug:
+    var: longhorn_output.stdout_lines
+  when: inventory_hostname == master1
+  tags: helm

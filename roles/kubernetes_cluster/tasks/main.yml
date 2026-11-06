@@ -5,3 +5,4 @@
 - import_tasks: network.yaml
 - import_tasks: join_worker_to_master.yaml
 - import_tasks: join_master_to_master.yaml
+- import_tasks: longhorn.yaml
