@@ -1,22 +1,36 @@
 ---
 
-- name: install Pod network 1
-  shell: kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/tigera-operator.yaml --kubeconfig /etc/kubernetes/admin.conf >> pod_network_setup1.log
+- name: install Pod network 1 (Calico CRDs)
+  shell: kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/v3_projectcalico_org.yaml --kubeconfig /etc/kubernetes/admin.conf >> pod_network_setup1.log
   tags: network
   args:
     chdir: $HOME
     creates: pod_network_setup1.log
 
 - name: Release Information
-  shell: cat /etc/*rel* > release.log
+  shell: cat /etc/*rel* > release1.log
   tags: network
   args:
     chdir: $HOME
-    creates: release.log
+    creates: release1.log
 
-- name: install Pod network 2
-  shell: wget https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/custom-resources.yaml && kubectl apply -f custom-resources.yaml --kubeconfig /etc/kubernetes/admin.conf >> pod_network_setup2.log
+- name: install Pod network 2 (Tigera operator)
+  shell: kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/tigera-operator.yaml --kubeconfig /etc/kubernetes/admin.conf >> pod_network_setup2.log
   tags: network
   args:
     chdir: $HOME
     creates: pod_network_setup2.log
+
+- name: Release Information
+  shell: cat /etc/*rel* > release2.log
+  tags: network
+  args:
+    chdir: $HOME
+    creates: release2.log
+
+- name: install Pod network 3 (custom resources)
+  shell: wget https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/custom-resources.yaml && kubectl apply -f custom-resources.yaml --kubeconfig /etc/kubernetes/admin.conf >> pod_network_setup3.log
+  tags: network
+  args:
+    chdir: $HOME
+    creates: pod_network_setup3.log

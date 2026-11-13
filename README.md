@@ -308,7 +308,11 @@ ansible-playbook -i inventory --tag network -e 'machine=cluster_init' --become -
 
 This playbook:
 
-- Installs the Calico operator and custom resources using `kubectl` and the official manifests.
+- Installs Calico from the official manifests (`calico_version`) in three steps:
+  1. `v3_projectcalico_org.yaml` – Calico CRDs and admission policies.
+  2. `tigera-operator.yaml` – the Tigera operator.
+  3. `custom-resources.yaml` – the `Installation`, `APIServer`, `Goldmane` and `Whisker` resources that deploy Calico.
+- A short `cat /etc/*release*` task runs between the steps to give the API server time to register the new resources.
 
 After the network installation:
 
